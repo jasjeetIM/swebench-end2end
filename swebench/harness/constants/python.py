@@ -902,6 +902,75 @@ SPECS_PYDICOM.update(
 
 SPECS_HUMANEVAL = {k: {"python": "3.9", "test_cmd": "python"} for k in ["1.0"]}
 
+SPECS_URLLIB3 = {
+    "1.26": {
+        "python": "3.10",
+        "packages": "pip pytest",
+        "pip_packages": [
+            "setuptools", "wheel",
+            "h2", "hpack", "hyperframe",   # HTTP/2 extras often used in tests
+            "brotli",                      # content-encoding coverage
+            "pytest-asyncio",              # safe to include; many suites use it
+        ],
+        "install": [
+            "python -m pip install -e .",
+            "bash -lc 'test -f requirements.txt && python -m pip install -r requirements.txt || true'",
+            "bash -lc 'test -f requirements-dev.txt && python -m pip install -r requirements-dev.txt || true'",
+            "bash -lc 'test -f requirements-test.txt && python -m pip install -r requirements-test.txt || true'",
+        ],
+        "test_cmd": "pytest -rA --tb=long -p no:cacheprovider",
+    },
+    "2.0": {
+        "python": "3.11",
+        "packages": "pip pytest",
+        "pip_packages": ["setuptools","wheel","h2","hpack","hyperframe","brotli","pytest-asyncio"],
+        "install": [
+            "python -m pip install -e .",
+            "bash -lc 'test -f requirements.txt && python -m pip install -r requirements.txt || true'",
+            "bash -lc 'test -f requirements-dev.txt && python -m pip install -r requirements-dev.txt || true'",
+            "bash -lc 'test -f requirements-test.txt && python -m pip install -r requirements-test.txt || true'",
+        ],
+        "test_cmd": "pytest -rA --tb=long -p no:cacheprovider",
+    },
+        "2.4": {
+        "python": "3.11",
+        "packages": "pip pytest",
+        "pip_packages": [
+            "setuptools", "wheel",
+            "h2", "hpack", "hyperframe",
+            "brotli",
+            "pytest-asyncio",
+            "trustme",
+        ],
+        "install": [
+            "python -m pip install -e .",
+            "bash -lc 'test -f requirements.txt && python -m pip install -r requirements.txt || true'",
+            "bash -lc 'test -f requirements-dev.txt && python -m pip install -r requirements-dev.txt || true'",
+            "bash -lc 'test -f requirements-test.txt && python -m pip install -r requirements-test.txt || true'",
+        ],
+        "test_cmd": "pytest -rA --tb=long -p no:cacheprovider",
+    },
+    "2.5": {
+        # keep 3.11 here too for image reuse; bump to 3.12 later if you want
+        "python": "3.11",
+        "packages": "pip pytest",
+        "pip_packages": [
+            "setuptools", "wheel",
+            "h2", "hpack", "hyperframe",
+            "brotli",
+            "pytest-asyncio",
+            "trustme",
+        ],
+        "install": [
+            "python -m pip install -e .",
+            "bash -lc 'test -f requirements.txt && python -m pip install -r requirements.txt || true'",
+            "bash -lc 'test -f requirements-dev.txt && python -m pip install -r requirements-dev.txt || true'",
+            "bash -lc 'test -f requirements-test.txt && python -m pip install -r requirements-test.txt || true'",
+        ],
+        "test_cmd": "pytest -rA --tb=long -p no:cacheprovider",
+    },
+}
+
 # Constants - Task Instance Instllation Environment
 MAP_REPO_VERSION_TO_SPECS_PY = {
     "astropy/astropy": SPECS_ASTROPY,
@@ -925,6 +994,10 @@ MAP_REPO_VERSION_TO_SPECS_PY = {
     "swe-bench/humaneval": SPECS_HUMANEVAL,
     "sympy/sympy": SPECS_SYMPY,
 }
+
+MAP_REPO_VERSION_TO_SPECS_PY.update({
+    "urllib3/urllib3": SPECS_URLLIB3,
+})
 
 # Constants - Repository Specific Installation Instructions
 MAP_REPO_TO_INSTALL_PY = {}

@@ -287,3 +287,7 @@ MAP_REPO_TO_PARSER_PY = {
     "sphinx-doc/sphinx": parse_log_sphinx,
     "sympy/sympy": parse_log_sympy,
 }
+
+MAP_REPO_TO_PARSER_PY.update({
+    "urllib3/urllib3": parse_log_pytest
+})

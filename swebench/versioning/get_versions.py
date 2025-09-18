@@ -26,6 +26,7 @@ INSTALL_CMD = {
     "pytest-dev/pytest": "pip install -e .",
     "matplotlib/matplotlib": "python -m pip install -e .",
     "pydata/xarray": "pip install -e .",
+     "urllib3/urllib3": "python -m pip install -e .",
 }
 
 
@@ -39,6 +40,8 @@ def _find_version_in_text(text: str, instance: dict) -> str:
     Returns:
         str: Version text, if found
     """
+    if not text:
+        return None
     # Remove comments
     pattern = r'""".*?"""'
     text = re.sub(pattern, "", text, flags=re.DOTALL)
@@ -82,8 +85,10 @@ def get_version(instance, is_build=False, path_repo=None):
             version_path_abs = os.path.join(path_repo, path_to_version)
             if os.path.exists(version_path_abs):
                 logger.info(f"Found version file at {path_to_version}")
-                with open(path_to_version) as f:
+                with open(version_path_abs, "r", encoding="utf-8", errors="ignore") as f:
                     init_text = f.read()
+            else:
+                continue
         else:
             url = os.path.join(
                 SWE_BENCH_URL_RAW,
@@ -91,8 +96,13 @@ def get_version(instance, is_build=False, path_repo=None):
                 instance["base_commit"],
                 path_to_version,
             )
-            init_text = requests.get(url).text
+            resp = requests.get(url, timeout=30, verify=False)
+            if resp.ok:
+                init_text = resp.text
+            else:
+                continue
         version = _find_version_in_text(init_text, instance)
+        print(f"VERSION: {version}")
         if version is not None:
             if "." in version:
                 version = keep_major_minor(version, ".")
@@ -178,6 +188,7 @@ def get_versions_from_build(data: dict):
             f"{cmd_source}; {cmd_activate} {conda_env}; {cmd_install}",
             shell=True,
             stdout=subprocess.DEVNULL,
+            executable="/bin/bash",
         )
         if out_install.returncode != 0:
             logger.error(f"[{instance['instance_id']}] Installation failed")
@@ -185,6 +196,27 @@ def get_versions_from_build(data: dict):
 
         # Look up version according to repo-specific paths
         version = get_version(instance, is_build=True, path_repo=path_repo)
+
+        # Fallback: programmatic version (handles dynamic versioning)
+        if not version:
+            cmd_get = (
+                f"{cmd_source}; {cmd_activate} {conda_env}; "
+                "python - <<'PY'\n"
+                "try:\n"
+                "    import importlib.metadata as m\n"
+                "    print(m.version('urllib3'))\n"
+                "except Exception:\n"
+                "    import urllib3\n"
+                "    print(getattr(urllib3, '__version__', ''))\n"
+                "PY"
+            )
+            out = subprocess.run(cmd_get, shell=True, capture_output=True, text=True, executable="/bin/bash")
+            ver = (out.stdout or '').strip()
+            print(ver)
+            if ver:
+                # normalize to major.minor to match SPECS keys
+                version = ".".join(ver.split(".")[:2])
+
         instance["version"] = version
         logger.info(f"For instance {instance['instance_id']}, version is {version}")
 
@@ -318,8 +350,10 @@ def main(args):
             logger.info(
                 f"Creating clone of {data_tasks[0]['repo']} at {testbed_repo_name}"
             )
+             # Clone the actual upstream repo (not a swe-bench mirror)
+            owner_repo = data_tasks[0]["repo"]  # e.g., "urllib3/urllib3"
             cmd_clone = (
-                f"git clone git@github.com:swe-bench/{repo_prefix} {testbed_repo_name}"
+               f"git clone https://github.com/{owner_repo}.git {testbed_repo_name}"
             )
             subprocess.run(cmd_clone, shell=True, check=True, stdout=subprocess.DEVNULL)
         else:

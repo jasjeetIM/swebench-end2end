@@ -320,7 +320,7 @@ def extract_patches(pull: dict, repo: Repo) -> tuple[str, str]:
         patch_change_str (str): gold patch
         patch_test_str (str): test patch
     """
-    patch = requests.get(pull["diff_url"]).text
+    patch = requests.get(pull["diff_url"], timeout=30, verify=False).text
     patch_test = ""
     patch_fix = ""
     for hunk in PatchSet(patch):

@@ -21,6 +21,14 @@ MAP_REPO_TO_VERSION_PATHS = {
     "sympy/sympy": ["sympy/release.py", "sympy/__init__.py"],
 }
 
+MAP_REPO_TO_VERSION_PATHS.update({
+    "urllib3/urllib3": [
+        "src/urllib3/__init__.py",   # exposes __version__
+        "pyproject.toml",
+    ]
+})
+
+
 # Cosntants - Task Instance Version Regex Pattern
 MAP_REPO_TO_VERSION_PATTERNS = {
     k: [r'__version__ = [\'"](.*)[\'"]', r"VERSION = \((.*)\)"]
@@ -54,5 +62,12 @@ MAP_REPO_TO_VERSION_PATTERNS.update({k: [r"(.*)"] for k in ["Qiskit/qiskit"]})
 MAP_REPO_TO_VERSION_PATTERNS.update(
     {k: [r"version_info = [\d]+,[\d\s]+,"] for k in ["pyvista/pyvista"]}
 )
+
+MAP_REPO_TO_VERSION_PATTERNS.update({
+    "urllib3/urllib3": [
+        r'__version__\s*=\s*["\']([^"\']+)["\']',
+        r'^version\s*=\s*["\']([^"\']+)["\']',
+    ]
+})
 
 SWE_BENCH_URL_RAW = "https://raw.githubusercontent.com/"

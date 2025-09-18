@@ -1,107 +1,159 @@
-from swebench.harness.dockerfiles.c import (
-    _DOCKERFILE_BASE_C,
-    _DOCKERFILE_INSTANCE_C,
-)
-from swebench.harness.dockerfiles.go import (
-    _DOCKERFILE_BASE_GO,
-    _DOCKERFILE_INSTANCE_GO,
-)
-from swebench.harness.dockerfiles.java import (
-    _DOCKERFILE_BASE_JAVA,
-    _DOCKERFILE_INSTANCE_JAVA,
-)
-from swebench.harness.dockerfiles.javascript import (
-    _DOCKERFILE_BASE_JS,
-    _DOCKERFILE_BASE_JS_2,
-    _DOCKERFILE_ENV_JS,
-    _DOCKERFILE_INSTANCE_JS,
-)
-from swebench.harness.dockerfiles.python import (
-    _DOCKERFILE_BASE_PY,
-    _DOCKERFILE_ENV_PY,
-    _DOCKERFILE_INSTANCE_PY,
-)
-from swebench.harness.dockerfiles.php import (
-    _DOCKERFILE_BASE_PHP,
-    _DOCKERFILE_INSTANCE_PHP,
-)
-from swebench.harness.dockerfiles.ruby import (
-    _DOCKERFILE_BASE_RUBY,
-    _DOCKERFILE_INSTANCE_RUBY,
-)
-from swebench.harness.dockerfiles.rust import (
-    _DOCKERFILE_BASE_RUST,
-    _DOCKERFILE_INSTANCE_RUST,
-)
-
-_DOCKERFILE_BASE = {
-    "c": _DOCKERFILE_BASE_C,
-    "go": _DOCKERFILE_BASE_GO,
-    "py": _DOCKERFILE_BASE_PY,
-    "java": _DOCKERFILE_BASE_JAVA,
-    "js": _DOCKERFILE_BASE_JS,
-    "php": _DOCKERFILE_BASE_PHP,
-    "rb": _DOCKERFILE_BASE_RUBY,
-    "rs": _DOCKERFILE_BASE_RUST,
-}
-
-_DOCKERFILE_ENV = {
-    "py": _DOCKERFILE_ENV_PY,
-    "js": _DOCKERFILE_ENV_JS,
-}
-
-_DOCKERFILE_INSTANCE = {
-    "c": _DOCKERFILE_INSTANCE_C,
-    "go": _DOCKERFILE_INSTANCE_GO,
-    "py": _DOCKERFILE_INSTANCE_PY,
-    "java": _DOCKERFILE_INSTANCE_JAVA,
-    "js": _DOCKERFILE_INSTANCE_JS,
-    "php": _DOCKERFILE_INSTANCE_PHP,
-    "rb": _DOCKERFILE_INSTANCE_RUBY,
-    "rs": _DOCKERFILE_INSTANCE_RUST,
-}
+from __future__ import annotations
+from string import Template
 
 
-def get_dockerfile_base(platform, arch, language, **kwargs):
-    if arch == "arm64":
-        conda_arch = "aarch64"
-    else:
-        conda_arch = arch
-
-    # Special handling for some js repos that require a different base image.
-    # If other languages also start using variants, this logic should be moved
-    # to a helper function
-    if "_variant" in kwargs and kwargs["_variant"] == "js_2":
-        del kwargs["_variant"]
-        return _DOCKERFILE_BASE_JS_2.format(platform=platform, **kwargs)
-
-    return _DOCKERFILE_BASE[language].format(
-        platform=platform, conda_arch=conda_arch, **kwargs
-    )
+def _tmpl(src: str, **kwargs) -> str:
+    # Safe formatter: ignores $... that we didn't pass (e.g., $PATH, sed's $ anchor)
+    return Template(src).safe_substitute(**kwargs)
 
 
-def get_dockerfile_env(platform, arch, language, base_image_key, **kwargs):
-    # Some languages do not have an environment Dockerfile. In those cases, the
-    # base Dockerfile is used as the environment Dockerfile.
-    dockerfile = _DOCKERFILE_ENV.get(language, _DOCKERFILE_BASE[language])
-
-    if "_variant" in kwargs and kwargs["_variant"] == "js_2":
-        del kwargs["_variant"]
-        return _DOCKERFILE_BASE_JS_2.format(platform=platform, **kwargs)
-
-    return dockerfile.format(
-        platform=platform, arch=arch, base_image_key=base_image_key, **kwargs
-    )
+def _normalize_platform(p: str | None) -> str:
+    if not p:
+        return "linux/x86_64"
+    p = p.strip()
+    if p in ("x86_64", "amd64"):
+        return "linux/x86_64"
+    return p
 
 
-def get_dockerfile_instance(platform, language, env_image_name):
-    return _DOCKERFILE_INSTANCE[language].format(
-        platform=platform, env_image_name=env_image_name
-    )
+def _coerce_args_for_base(language: str, args: tuple, kwargs: dict) -> tuple[str, dict]:
+    """
+    Accepts legacy/incorrect positional ordering and normalizes:
+      expected keys: language='py', ubuntu_version, platform
+      frequent bad call: get_dockerfile_base("linux/x86_64", ubuntu_version="22.04")
+    """
+    # If first positional looks like a platform, it was passed as "language".
+    if isinstance(language, str) and "/" in language:
+        # Move this into platform, and default language to 'py' (the only supported one)
+        kwargs.setdefault("platform", language)
+        language = kwargs.pop("language", "py")
+
+    # Map remaining positionals if any
+    if len(args) >= 1 and "ubuntu_version" not in kwargs:
+        kwargs["ubuntu_version"] = args[0]
+    if len(args) >= 2 and "platform" not in kwargs:
+        kwargs["platform"] = args[1]
+
+    # Defaults
+    kwargs.setdefault("ubuntu_version", "22.04")
+    kwargs["platform"] = _normalize_platform(kwargs.get("platform"))
+    return language, kwargs
 
 
-__all__ = [
-    "get_dockerfile_base",
-    "get_dockerfile_env",
-    "get_dockerfile_instance",
-]
+def _coerce_args_for_env(language: str, args: tuple, kwargs: dict) -> tuple[str, dict]:
+    """
+    expected keys: language='py', base_image_key, platform
+    tolerate legacy orders like:
+      get_dockerfile_env("py", base_image_key, "linux/x86_64")
+      get_dockerfile_env("py", "linux/x86_64", base_image_key)
+      get_dockerfile_env("linux/x86_64", base_image_key)  # language omitted/shifted
+    """
+    # If first positional looks like a platform, it was passed as "language".
+    if isinstance(language, str) and "/" in language:
+        kwargs.setdefault("platform", language)
+        language = kwargs.pop("language", "py")
+
+    # If caller already used kwargs, prefer them
+    base_kw = kwargs.get("base_image_key")
+    plat_kw = kwargs.get("platform")
+
+    # Heuristics to identify args regardless of order
+    platform_candidates = set()
+    base_candidates = set()
+
+    def looks_like_platform(s: str) -> bool:
+        s = s.strip()
+        return (s.startswith("linux/") or s in {"x86_64", "amd64", "linux/amd64", "linux/x86_64"})
+
+    def looks_like_base_image(s: str) -> bool:
+        # We expect something like "sweb.base.py.x86_64:latest"
+        # or any repo:tag form containing ":" (but avoid windows paths)
+        return (":" in s) or ("sweb.base" in s) or (s.startswith("sweb.base."))
+
+    for a in args:
+        if isinstance(a, str):
+            if looks_like_platform(a):
+                platform_candidates.add(a)
+            if looks_like_base_image(a):
+                base_candidates.add(a)
+
+    # Assign from kwargs first, then heuristics, then positional fallback
+    if not base_kw:
+        if base_candidates:
+            kwargs["base_image_key"] = next(iter(base_candidates))
+        elif len(args) >= 1:
+            kwargs.setdefault("base_image_key", args[0])
+
+    if not plat_kw:
+        if platform_candidates:
+            kwargs["platform"] = next(iter(platform_candidates))
+        elif len(args) >= 2:
+            kwargs.setdefault("platform", args[1])
+
+    if not kwargs.get("base_image_key"):
+        raise ValueError("base_image_key is required")
+
+    # Normalize/validate platform
+    kwargs["platform"] = _normalize_platform(kwargs.get("platform"))
+    if kwargs["platform"] not in {"linux/x86_64", "linux/amd64"}:
+        # If something bizarre slipped in (e.g., a tag), default to sane platform
+        kwargs["platform"] = "linux/x86_64"
+
+    return language or "py", kwargs
+
+
+
+def _coerce_args_for_instance(language: str, args: tuple, kwargs: dict) -> tuple[str, dict]:
+    """
+    expected keys: language='py', env_image_name, platform
+    legacy positional: get_dockerfile_instance("py", env_image_name, "linux/x86_64")
+    bad call we tolerate: get_dockerfile_instance("linux/x86_64", env_image_name)
+    """
+    if isinstance(language, str) and "/" in language:
+        kwargs.setdefault("platform", language)
+        language = kwargs.pop("language", "py")
+
+    if len(args) >= 1 and "env_image_name" not in kwargs:
+        kwargs["env_image_name"] = args[0]
+    if len(args) >= 2 and "platform" not in kwargs:
+        kwargs["platform"] = args[1]
+
+    if not kwargs.get("env_image_name"):
+        raise ValueError("env_image_name is required")
+
+    kwargs["platform"] = _normalize_platform(kwargs.get("platform"))
+    return language, kwargs
+
+
+def get_dockerfile_base(language: str, *args, **kwargs) -> str:
+    from .python import _DOCKERFILE_BASE_PY
+    language, kwargs = _coerce_args_for_base(language, args, kwargs)
+    if language != "py":
+        # Only 'py' is supported today; normalize any weird inputs to py if caller provided it in kwargs
+        if kwargs.get("language") == "py":
+            language = "py"
+        else:
+            raise ValueError(f"Unsupported language: {language}")
+    return _tmpl(_DOCKERFILE_BASE_PY, **kwargs)
+
+
+def get_dockerfile_env(language: str, *args, **kwargs) -> str:
+    from .python import _DOCKERFILE_ENV_PY
+    language, kwargs = _coerce_args_for_env(language, args, kwargs)
+    if language != "py":
+        if kwargs.get("language") == "py":
+            language = "py"
+        else:
+            raise ValueError(f"Unsupported language: {language}")
+    return _tmpl(_DOCKERFILE_ENV_PY, **kwargs)
+
+
+def get_dockerfile_instance(language: str, *args, **kwargs) -> str:
+    from .python import _DOCKERFILE_INSTANCE_PY
+    language, kwargs = _coerce_args_for_instance(language, args, kwargs)
+    if language != "py":
+        if kwargs.get("language") == "py":
+            language = "py"
+        else:
+            raise ValueError(f"Unsupported language: {language}")
+    return _tmpl(_DOCKERFILE_INSTANCE_PY, **kwargs)
