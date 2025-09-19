@@ -287,12 +287,16 @@ def make_repo_script_list_py(
         'COMMIT_COUNT=$(git log --oneline --all --since="$AFTER_TIMESTAMP" | wc -l)',
         '[ "$COMMIT_COUNT" -eq 0 ] || exit 1',
         # Make sure conda is available for later use
-        "source /opt/miniconda3/bin/activate",
+        "source /opt/miniconda3/etc/profile.d/conda.sh",
         f"conda activate {env_name}",
         'echo "Current environment: $CONDA_DEFAULT_ENV"',
     ]
     if repo in MAP_REPO_TO_INSTALL:
-        setup_commands.append(MAP_REPO_TO_INSTALL[repo])
+        _install = MAP_REPO_TO_INSTALL[repo]
+        if isinstance(_install, (list, tuple)):
+            setup_commands.extend(_install)
+        else:
+            setup_commands.append(_install)
 
     # Run pre-install set up if provided
     if "pre_install" in specs:
@@ -300,7 +304,11 @@ def make_repo_script_list_py(
             setup_commands.append(pre_install)
 
     if "install" in specs:
-        setup_commands.append(specs["install"])
+        _install = specs["install"]
+        if isinstance(_install, (list, tuple)):
+            setup_commands.extend(_install)
+        else:
+            setup_commands.append(_install)
 
     # If the setup modifies the repository in any way, it can be
     # difficult to get a clean diff.  This ensures that `git diff`
@@ -322,7 +330,8 @@ def make_env_script_list_py_from_conda(
 ) -> list:
     HEREDOC_DELIMITER = "EOF_59812759871"
     reqs_commands = [
-        "source /opt/miniconda3/bin/activate",
+        "source /opt/miniconda3/etc/profile.d/conda.sh",
+        "conda config --system --set ssl_verify false || true",
         f"cat <<'{HEREDOC_DELIMITER}' > /root/environment.yml\n{cached_environment_yml}\n{HEREDOC_DELIMITER}",
         "conda env create -f /root/environment.yml",
         f"conda activate {env_name}",
@@ -342,7 +351,8 @@ def make_env_script_list_py(instance, specs, env_name) -> list:
         )
     HEREDOC_DELIMITER = "EOF_59812759871"
     reqs_commands = [
-        "source /opt/miniconda3/bin/activate",
+        "source /opt/miniconda3/etc/profile.d/conda.sh",
+        "conda config --system --set ssl_verify false || true",
     ]
     # Create conda environment according to install instructinos
     pkgs = specs.get("packages", "")
@@ -357,7 +367,7 @@ def make_env_script_list_py(instance, specs, env_name) -> list:
         reqs_commands.append(
             f"cat <<'{HEREDOC_DELIMITER}' > {path_to_reqs}\n{reqs}\n{HEREDOC_DELIMITER}"
         )
-        cmd = f"conda activate {env_name} && python -m pip install -r {path_to_reqs}"
+        cmd = f"conda activate {env_name} && python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r {path_to_reqs}"
         reqs_commands.append(cmd)
         reqs_commands.append(f"rm {path_to_reqs}")
     elif pkgs == "environment.yml":
@@ -397,7 +407,7 @@ def make_env_script_list_py(instance, specs, env_name) -> list:
     # Install additional packages if specified
     if "pip_packages" in specs:
         pip_packages = " ".join(specs["pip_packages"])
-        cmd = f"python -m pip install {pip_packages}"
+        cmd = f"python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org {pip_packages}"
         reqs_commands.append(cmd)
     return reqs_commands
 
@@ -424,7 +434,7 @@ def make_eval_script_list_py(
         ]
     )
     eval_commands = [
-        "source /opt/miniconda3/bin/activate",
+        "source /opt/miniconda3/etc/profile.d/conda.sh",
         f"conda activate {env_name}",
         f"cd {repo_directory}",
     ]
@@ -437,7 +447,7 @@ def make_eval_script_list_py(
         "git status",
         "git show",
         f"git -c core.fileMode=false diff {base_commit}",
-        "source /opt/miniconda3/bin/activate",
+        "source /opt/miniconda3/etc/profile.d/conda.sh",
         f"conda activate {env_name}",
     ]
     if "install" in specs:
