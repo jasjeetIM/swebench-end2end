@@ -182,6 +182,7 @@ def build_base_images(
         instance_image_tag=instance_image_tag,
         env_image_tag=env_image_tag,
     )
+    print(test_specs)
     base_images = {
         x.base_image_key: (x.base_dockerfile, x.platform) for x in test_specs
     }

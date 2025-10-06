@@ -10,6 +10,7 @@ from swebench.harness.constants.php import *
 from swebench.harness.constants.python import *
 from swebench.harness.constants.ruby import *
 from swebench.harness.constants.rust import *
+from swebench.harness.constants.typescript import *
 
 
 # Constants - Evaluation Log Directories
@@ -142,6 +143,7 @@ MAP_REPO_VERSION_TO_SPECS = {
     **MAP_REPO_VERSION_TO_SPECS_PY,
     **MAP_REPO_VERSION_TO_SPECS_RUBY,
     **MAP_REPO_VERSION_TO_SPECS_RUST,
+    **MAP_REPO_VERSION_TO_SPECS_TS,
 }
 
 MAP_REPO_TO_INSTALL = {
